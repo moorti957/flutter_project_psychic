@@ -33,7 +33,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
     }
 
     final url = Uri.parse(
-        "https://psychicbelive.mapps.site/api/psychic/my-bookings");
+        "https://psychicbelive.mapps.site/api/user/orders");
 
     final response = await http.get(
       url,
@@ -46,7 +46,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       setState(() {
-        bookings = data["bookings"];
+        bookings = data["data"];
         loading = false;
       });
     } else {
@@ -114,17 +114,17 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
     switch (type) {
       case "call":
         icon = Icons.call;
-        text = "Start Call";
+        text = "join";
         break;
 
       case "chat":
         icon = Icons.chat;
-        text = "Start Chat";
+        text = "join";
         break;
 
       case "video":
         icon = Icons.video_call;
-        text = "Start Video";
+        text = "join";
         break;
 
       default:
@@ -142,12 +142,16 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
           final uid = data["uid"];
           final token = data["token"];
 
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => CallScreen(roomId: "1234"),
-            ),
-          );
+          // Navigator.push(
+          //   context,
+          //   MaterialPageRoute(
+          //     builder: (_) => VideoCallScreen(
+          //       channelName: channel,
+          //       token: token,
+          //       uid: uid,
+          //     ),
+          //   ),
+          // );
         }
       }
           : () {
@@ -181,7 +185,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
         itemCount: bookings.length,
         itemBuilder: (context, index) {
           final b = bookings[index];
-          final psychic = b["psychic"];
+          final psychic = b["psychic"] ?? {};
 
           final bool active =
           isSessionActive(b["date"], b["time"]);
@@ -206,10 +210,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                   children: [
                     CircleAvatar(
                       radius: 30,
-                      backgroundImage: psychic["profile_image"] != null
+                      backgroundImage: (psychic["profile_image"] != null && psychic["profile_image"] != "")
                           ? NetworkImage(psychic["profile_image"])
-                          : const AssetImage("assets/images/4d1244c8cd23f93c1a9d40fe9c4df8756afecddf.png")
-                      as ImageProvider,
+                          : const AssetImage("assets/images/default.png"),
                     ),
                     const SizedBox(width: 12),
                     Expanded(

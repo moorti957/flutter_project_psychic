@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:psychics/repository/PsychicProfile/FreelancerProfileScreen.dart';
+import 'package:psychics/repository/screens/MyBooking/PsychicBookingsScreen.dart';
 
 
 class PsychicMainNavigation extends StatefulWidget {
@@ -23,7 +24,7 @@ class _PsychicMainNavigationState extends State<PsychicMainNavigation> {
     final List<Widget> screens = [
       widget.profileScreen,   // <-- SHOW PSYCHIC PROFILE HERE
       const Center(child: Text("Calls Page Coming Soon")),
-      const Center(child: Text("Chats Page Coming Soon")),
+      const PsychicBookingsScreen(),
       const Center(child: Text("Profile Page Coming Soon")),
     ];
 

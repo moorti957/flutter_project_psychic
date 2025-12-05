@@ -1,3 +1,4 @@
+// FreelancerProfileScreen.dart
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -7,7 +8,6 @@ import 'package:psychics/repository/screens/Bottomnav/PsychicMainNavigation.dart
 import 'package:psychics/repository/screens/Dashboard/PsychicDashboardScreen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-
 
 class FreelancerProfileScreen extends StatefulWidget {
   final String name;
@@ -57,11 +57,27 @@ class _FreelancerProfileScreenState extends State<FreelancerProfileScreen>
     loadSavedImage();
   }
 
+  /// Load profile image from SharedPreferences and normalize to full URL if needed.
   void loadSavedImage() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      profileImageUrl = prefs.getString("profile_image");
-    });
+    String? raw = prefs.getString("profile_image");
+
+    if (raw == null || raw.isEmpty) {
+      setState(() => profileImageUrl = null);
+      debugPrint("No saved profile_image in prefs");
+      return;
+    }
+
+    String normalized = raw;
+
+    // If saved value isn't a fully qualified URL, build the expected absolute URL
+    if (!normalized.startsWith("http")) {
+      normalized = "https://psychicbelive.mapps.site/uploads/users/${normalized.replaceFirst(RegExp(r'^/'), '')}";
+    }
+
+    debugPrint("Loaded profile image from prefs -> $normalized");
+
+    setState(() => profileImageUrl = normalized);
   }
 
   // UPDATE API
@@ -90,10 +106,10 @@ class _FreelancerProfileScreenState extends State<FreelancerProfileScreen>
       request.headers["Accept"] = "application/json";
 
       // TEXT DATA
-      request.fields["name"] = widget.name;
-      request.fields["about"] = widget.about;
-      request.fields["price"] = widget.price;
-      request.fields["experience"] = widget.experience;
+      request.fields["display_name"] = widget.name;
+      request.fields["bio"] = widget.about;
+      request.fields["price_per_minute"] = widget.price;
+      request.fields["experience_years"] = widget.experience;
       request.fields["category"] = widget.category;
 
       request.fields["skills"] = widget.skills.join(",");
@@ -115,38 +131,32 @@ class _FreelancerProfileScreenState extends State<FreelancerProfileScreen>
       var response = await request.send();
       var body = await response.stream.bytesToString();
 
-      print("UPDATE STATUS = ${response.statusCode}");
-      print("UPDATE RESPONSE = $body");
+      debugPrint("UPDATE STATUS = ${response.statusCode}");
+      debugPrint("UPDATE RESPONSE = $body");
 
       if (response.statusCode == 200) {
-
-        // 🎯 STEP 1 — Parse response
         final data = jsonDecode(body);
 
-        // 🎯 STEP 2 — Extract image URL safely
+        // Extract image value from response (several possible keys)
         String? imageUrl =
-            data["data"]?["image"] ??
-                data["data"]?["profile_photo"] ??
-                data["data"]?["image_url"];
+            data["data"]?["image"] ?? data["data"]?["profile_photo"] ?? data["data"]?["image_url"];
 
-        // 🎯 STEP 3 — Save image in SharedPreferences
         if (imageUrl != null && imageUrl.isNotEmpty) {
-          // Convert relative path to full URL
-          if (!imageUrl.startsWith("http")) {
-            imageUrl = "https://psychicbelive.mapps.site/${imageUrl.replaceFirst(RegExp(r'^/'), '')}";
+          // Normalize into a full URL if it's a filename
+          String normalized = imageUrl;
+          if (!normalized.startsWith("http")) {
+            normalized =
+            "https://psychicbelive.mapps.site/uploads/users/${normalized.replaceFirst(RegExp(r'^/'), '')}";
           }
 
-          await prefs.setString("profile_image", imageUrl);
-          print("PROFILE IMAGE SAVED → $imageUrl");
-        }
-        String buildImageUrl(String? photo) {
-          if (photo == null || photo.isEmpty) return "";
-          if (photo.startsWith("http")) return photo;
-          return "https://psychicbelive.mapps.site/uploads/users/$photo";
+          await prefs.setString("profile_image", normalized);
+          debugPrint("Saved normalized profile_image to prefs -> $normalized");
+
+          // Update displayed image immediately
+          setState(() => profileImageUrl = normalized);
         }
 
-
-        // 🎉 SUCCESS TOAST
+        // Success toast
         Fluttertoast.showToast(
           msg: "Profile Saved Successfully!",
           toastLength: Toast.LENGTH_SHORT,
@@ -154,33 +164,28 @@ class _FreelancerProfileScreenState extends State<FreelancerProfileScreen>
           fontSize: 16.0,
         );
 
-        // ⭐ MOVE TO DASHBOARD AFTER SAVE
+        // Move to dashboard
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(
             builder: (_) => PsychicMainNavigation(
-              profileScreen: const PsychicDashboardScreen(), // ✅ सही screen
+              profileScreen: const PsychicDashboardScreen(),
             ),
           ),
               (route) => false,
         );
-
-
-
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Error: $body")),
         );
       }
-
     } catch (e) {
+      debugPrint("updatePsychicProfile error: $e");
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Error: $e")),
       );
     }
   }
-
-
 
   // TAB BUTTON
   Widget tabButton(String text, int index) {
@@ -233,9 +238,7 @@ class _FreelancerProfileScreenState extends State<FreelancerProfileScreen>
             ],
           ),
         ),
-
         const SizedBox(height: 6),
-
         if (expanded)
           Column(
             children: items
@@ -244,8 +247,7 @@ class _FreelancerProfileScreenState extends State<FreelancerProfileScreen>
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
                   children: [
-                    const Icon(Icons.star,
-                        size: 16, color: Colors.deepPurple),
+                    const Icon(Icons.star, size: 16, color: Colors.deepPurple),
                     const SizedBox(width: 8),
                     Expanded(child: Text(e)),
                   ],
@@ -254,7 +256,6 @@ class _FreelancerProfileScreenState extends State<FreelancerProfileScreen>
             )
                 .toList(),
           ),
-
         const SizedBox(height: 12),
         Divider(color: Colors.grey.shade300),
         const SizedBox(height: 12),
@@ -269,13 +270,10 @@ class _FreelancerProfileScreenState extends State<FreelancerProfileScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-
-        // ⭐ 4 Tarf Border Added Here
         border: Border.all(
           color: Colors.deepPurple,
           width: 1.2,
         ),
-
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
@@ -287,30 +285,22 @@ class _FreelancerProfileScreenState extends State<FreelancerProfileScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("About Me",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-
+          const Text("About Me", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
           const SizedBox(height: 10),
-
-          Text(widget.about,
-              style: const TextStyle(fontSize: 15, height: 1.4)),
-
+          Text(widget.about, style: const TextStyle(fontSize: 15, height: 1.4)),
           const SizedBox(height: 20),
-
           expandableSection(
             title: "Specialities",
             items: widget.skills,
             expanded: expandSkills,
             onToggle: () => setState(() => expandSkills = !expandSkills),
           ),
-
           expandableSection(
             title: "Abilities",
             items: widget.ability,
             expanded: expandAbility,
             onToggle: () => setState(() => expandAbility = !expandAbility),
           ),
-
           expandableSection(
             title: "Tools",
             items: widget.tools,
@@ -322,15 +312,12 @@ class _FreelancerProfileScreenState extends State<FreelancerProfileScreen>
     );
   }
 
-
   Widget projectTab() => const Center(
-    child: Text("No users added yet",
-        style: TextStyle(color: Colors.grey, fontSize: 16)),
+    child: Text("No users added yet", style: TextStyle(color: Colors.grey, fontSize: 16)),
   );
 
   Widget reviewTab() => const Center(
-    child: Text("No reviews yet",
-        style: TextStyle(color: Colors.grey, fontSize: 16)),
+    child: Text("No reviews yet", style: TextStyle(color: Colors.grey, fontSize: 16)),
   );
 
   // UI
@@ -344,49 +331,69 @@ class _FreelancerProfileScreenState extends State<FreelancerProfileScreen>
           child: Column(
             children: [
               const SizedBox(height: 10),
-
-              // const Text(
-              //   "Psychic Profile",
-              //   style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-              // ),
-
               const SizedBox(height: 10),
 
-              // CARD (old design SAME)
+              // CARD
               Container(
                 padding: const EdgeInsets.all(16),
-
                 decoration: BoxDecoration(
-                  color: Colors.white, // WHITE BOX
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  // boxShadow: [
-                  //   BoxShadow(
-                  //       color: Colors.black.withOpacity(0.20),
-                  //       blurRadius: 10,
-                  //       offset: const Offset(0, 4))
-                  // ],
                 ),
                 child: Column(
                   children: [
                     Row(
                       children: [
+                        // ===== SAFE PROFILE IMAGE WIDGET =====
                         Container(
                           height: 90,
                           width: 90,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(14),
-                            image: DecorationImage(
-                              image: widget.image != null
-                                  ? FileImage(widget.image!)                      // Newly picked image
-                                  : (profileImageUrl != null && profileImageUrl!.isNotEmpty
-                                  ? NetworkImage(profileImageUrl!)            // Saved from API
-                                  : const AssetImage("assets/profile.png"))   // Fallback
-                              as ImageProvider,
+                            color: Colors.grey.shade200,
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: widget.image != null
+                                ? Image.file(
+                              widget.image!,
                               fit: BoxFit.cover,
-                            ),
+                              width: double.infinity,
+                              height: double.infinity,
+                            )
+                                : (profileImageUrl != null && profileImageUrl!.isNotEmpty
+                                ? Image.network(
+                              profileImageUrl!,
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              height: double.infinity,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Container(
+                                  alignment: Alignment.center,
+                                  child: const SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) {
+                                debugPrint('Profile image load error: $error');
+                                return Container(
+                                  color: Colors.grey.shade200,
+                                  alignment: Alignment.center,
+                                  child: const Icon(Icons.person, size: 42, color: Colors.grey),
+                                );
+                              },
+                            )
+                                : Container(
+                              color: Colors.grey.shade200,
+                              alignment: Alignment.center,
+                              child: const Icon(Icons.person, size: 42, color: Colors.grey),
+                            )),
                           ),
                         ),
-
 
                         const SizedBox(width: 14),
 
@@ -395,13 +402,9 @@ class _FreelancerProfileScreenState extends State<FreelancerProfileScreen>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(widget.name,
-                                  style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w700)),
+                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                               const SizedBox(height: 6),
-                              Text(widget.category,
-                                  style: const TextStyle(
-                                      fontSize: 13, color: Colors.grey)),
+                              Text(widget.category, style: const TextStyle(fontSize: 13, color: Colors.grey)),
                             ],
                           ),
                         ),
@@ -428,7 +431,7 @@ class _FreelancerProfileScreenState extends State<FreelancerProfileScreen>
 
                     const SizedBox(height: 20),
 
-                    // START READING BUTTON (old style same)
+                    // Confirm Profile Button
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -436,13 +439,9 @@ class _FreelancerProfileScreenState extends State<FreelancerProfileScreen>
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.deepPurple,
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                        child: const Text("Confirm Profile",
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w600)),
+                        child: const Text("Confirm Profile", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                       ),
                     ),
                   ],

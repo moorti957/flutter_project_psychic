@@ -1,5 +1,4 @@
-//      PSYCHIC PROFILE SETUP – FINAL WORKING VERSION
-//      WITH AUTO-REDIRECT + SAVED PROFILE DATA
+//      PSYCHIC PROFILE SETUP – FINAL VERSION (AUTO-FILL + API FETCH + FIXED FIELDS)
 
 import 'dart:convert';
 import 'dart:io';
@@ -7,10 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart';
+import 'package:psychics/repository/screens/login/loginscreen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'FreelancerProfileScreen.dart';
-import 'package:psychics/repository/screens/Bottomnav/PsychicMainNavigation.dart';
 
 class PsychicProfileSetupScreen extends StatefulWidget {
   const PsychicProfileSetupScreen({super.key});
@@ -28,6 +27,7 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
 
   File? _image;
   final picker = ImagePicker();
+  String? userImageURL;
 
   List<dynamic> apiCategories = [];
   List<String> apiSkills = [];
@@ -37,16 +37,10 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
   List<String> selectedSkills = [];
   List<String> selectedAbility = [];
   List<String> selectedTools = [];
-
   List<String> selectedLanguages = [];
-  final List<String> languages = [
-    "Hindi", "English", "Punjabi", "Gujarati", "Tamil", "Kannada"
-  ];
 
   String? selectedCategory;
-  bool isOnline = true;
   bool isLoading = false;
-
   bool loadingSkills = true;
   bool loadingTools = true;
   bool loadingAbility = true;
@@ -54,53 +48,14 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
   @override
   void initState() {
     super.initState();
-    checkProfile();      //  ← NEW FUNCTION (AUTO REDIRECT)
+    loadExistingProfile();
     loadCategories();
     loadSkills();
     loadAbility();
     loadTools();
   }
 
-  //  █████████ AUTO SKIP SETUP IF PROFILE ALREADY CREATED █████████
-  Future<void> checkProfile() async {
-    final prefs = await SharedPreferences.getInstance();
-    bool already = prefs.getBool("isProfileCreated") ?? false;
-
-    if (already) {
-      String name = prefs.getString("name") ?? "";
-      String about = prefs.getString("about") ?? "";
-      String experience = prefs.getString("experience") ?? "";
-      String price = prefs.getString("price") ?? "";
-      String category = prefs.getString("category") ?? "";
-
-      List<String> skills = prefs.getStringList("skills") ?? [];
-      List<String> ability = prefs.getStringList("ability") ?? [];
-      List<String> tools = prefs.getStringList("tools") ?? [];
-      List<String> languages = prefs.getStringList("languages") ?? [];
-
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pushReplacement(
-          this.context,
-          MaterialPageRoute(
-            builder: (_) => FreelancerProfileScreen(
-              name: name,
-              about: about,
-              price: price,
-              experience: experience,
-              category: category,
-              skills: skills,
-              ability: ability,
-              tools: tools,
-              languages: languages,
-              image: null,
-            ),
-          ),
-        );
-      });
-    }
-  }
-
-  // ███████ IMAGE PICK ███████
+  // ------------------- PICK IMAGE -------------------
   Future pickImage() async {
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked != null) {
@@ -108,11 +63,113 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
     }
   }
 
-  // ███████ API LOADERS ███████
+  // ------------------- AUTO-FILL PROFILE DATA -------------------
+  Future<void> loadExistingProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? userId = prefs.getString("user_id");
 
+    if (userId == null) {
+      print("USER ID NOT FOUND");
+      return;
+    }
+
+    final response = await http.get(
+      Uri.parse("https://psychicbelive.mapps.site/api/psychics"),
+    );
+
+    if (response.statusCode != 200) {
+      print("Error loading psychics");
+      return;
+    }
+
+    final List psychics = jsonDecode(response.body)["data"];
+
+    final userPsychic = psychics.firstWhere(
+          (p) => p["user_id"].toString() == userId,
+      orElse: () => null,
+    );
+
+    if (userPsychic == null) {
+      print("NO PSYCHIC PROFILE FOUND FOR THIS USER");
+      return;
+    }
+
+    print("PSYCHIC DATA FOUND = $userPsychic");
+
+    // ------------------- CORRECT FIELDS -------------------
+
+    // NAME → comes from user table
+    nameController.text =
+        userPsychic["user"]?["name"]?.toString() ?? "";
+
+    // ABOUT → comes from psychic.bio
+    aboutController.text =
+        userPsychic["bio"]?.toString() ?? "";
+
+    // EXPERIENCE → correct field is experience_years
+    experienceController.text =
+        userPsychic["experience_years"]?.toString() ?? "";
+
+    // PRICE → correct field is price_per_minute
+    priceController.text =
+        userPsychic["price_per_minute"]?.toString() ?? "";
+
+    // CATEGORY → psychic API does NOT return category
+    selectedCategory = null;
+
+    // SPECIALTIES
+    selectedSkills = userPsychic["specialties"] != null
+        ? (userPsychic["specialties"] as List)
+        .map((e) => e.toString())
+        .toList()
+        : [];
+
+    // ABILITY
+    selectedAbility = userPsychic["ability"] != null
+        ? userPsychic["ability"]
+        .toString()
+        .replaceAll("\"", "")
+        .split(",")
+        .map((e) => e.trim())
+        .toList()
+        : [];
+
+    // TOOLS
+    selectedTools = userPsychic["tools"] != null
+        ? userPsychic["tools"]
+        .toString()
+        .replaceAll("\"", "")
+        .split(",")
+        .map((e) => e.trim())
+        .toList()
+        : [];
+
+    // PROFILE PHOTO FIXED PATH
+    // PROFILE PHOTO → correct field
+    if (userPsychic["user"]?["profile_photo"] != null &&
+        userPsychic["user"]["profile_photo"].toString().isNotEmpty) {
+      userImageURL =
+      "https://psychicbelive.mapps.site/uploads/users/${userPsychic["user"]["profile_photo"]}";
+      print("FINAL IMAGE URL => $userImageURL");
+    } else {
+      print("NO PROFILE PHOTO FOUND");
+    }
+
+    print("CHECK IMAGE PATH ON SERVER NOW:");
+    print(Uri.parse("https://psychicbelive.mapps.site/uploads/users/profile_photo/${userPsychic["user"]["profile_photo"]}"));
+
+
+
+
+
+    setState(() {});
+  }
+
+
+  // ------------------- API LOADER FUNCTIONS -------------------
   Future<void> loadCategories() async {
-    final response = await http
-        .get(Uri.parse("https://psychicbelive.mapps.site/api/psychics_categories"));
+    final response = await http.get(
+        Uri.parse("https://psychicbelive.mapps.site/api/psychics_categories"));
 
     if (response.statusCode == 200) {
       apiCategories = jsonDecode(response.body)["data"];
@@ -127,11 +184,9 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
     if (response.statusCode == 200) {
       final list = <String>[];
       for (var psychic in jsonDecode(response.body)["data"]) {
-        if (psychic["specialties"] != null &&
-            psychic["specialties"].toString().isNotEmpty) {
-          list.addAll(
-            psychic["specialties"].toString().split(",").map((e) => e.trim()),
-          );
+        if (psychic["specialties"] != null) {
+          list.addAll((psychic["specialties"] as List)
+              .map((e) => e.toString()));
         }
       }
       apiSkills = list.toSet().toList();
@@ -142,14 +197,12 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
   }
 
   Future<void> loadAbility() async {
-    final response = await http
-        .get(Uri.parse("https://psychicbelive.mapps.site/api/psychics_ability"));
+    final response = await http.get(
+        Uri.parse("https://psychicbelive.mapps.site/api/psychics_ability"));
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
       apiAbility = List<String>.from(
-        data["data"].map((e) =>
-            (e["name"] ?? e["title"] ?? e["ability"] ?? "").toString()),
+        jsonDecode(response.body)["data"].map((e) => e["name"].toString()),
       );
     }
 
@@ -162,10 +215,8 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
         .get(Uri.parse("https://psychicbelive.mapps.site/api/psychics_tools"));
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
       apiTools = List<String>.from(
-        data["data"].map((e) =>
-            (e["name"] ?? e["title"] ?? e["tool"] ?? "").toString()),
+        jsonDecode(response.body)["data"].map((e) => e["name"].toString()),
       );
     }
 
@@ -173,22 +224,18 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
     setState(() {});
   }
 
-  // ███████ SAVE PROFILE TO API + LOCAL STORAGE ███████
+  // ------------------- UPDATE PROFILE -------------------
   Future updateProfileAPI() async {
     setState(() => isLoading = true);
 
-    // ------------- ADD THIS PART HERE -------------
     final prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString("token");
 
-    if (token == null || token.isEmpty) {
-      print("TOKEN NOT FOUND!");
+    if (token == null) {
       ScaffoldMessenger.of(this.context).showSnackBar(
-        SnackBar(content: Text("Login token missing. Please login again.")),
-      );
+          const SnackBar(content: Text("Login token missing")));
       return;
     }
-    // -----------------------------------------------
 
     var request = http.MultipartRequest(
       "PUT",
@@ -197,16 +244,13 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
 
     request.headers["Authorization"] = "Bearer $token";
 
-
-    request.fields["name"] = nameController.text;
-    request.fields["experience"] = experienceController.text;
-    request.fields["about"] = aboutController.text;
-    request.fields["price"] = priceController.text;
-    request.fields["category"] = selectedCategory ?? "";
+    request.fields["display_name"] = nameController.text;
+    request.fields["experience_years"] = experienceController.text;
+    request.fields["bio"] = aboutController.text;
+    request.fields["price_per_minute"] = priceController.text;
     request.fields["skills"] = selectedSkills.join(",");
     request.fields["ability"] = selectedAbility.join(",");
     request.fields["tools"] = selectedTools.join(",");
-    request.fields["languages"] = selectedLanguages.join(",");
 
     if (_image != null) {
       request.files.add(await http.MultipartFile.fromPath(
@@ -222,21 +266,6 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
     setState(() => isLoading = false);
 
     if (response.statusCode == 200) {
-
-      // SAVE LOCALLY TOO
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool("isProfileCreated", true);
-
-      await prefs.setString("name", nameController.text);
-      await prefs.setString("experience", experienceController.text);
-      await prefs.setString("about", aboutController.text);
-      await prefs.setString("price", priceController.text);
-      await prefs.setString("category", selectedCategory ?? "");
-      await prefs.setStringList("skills", selectedSkills);
-      await prefs.setStringList("ability", selectedAbility);
-      await prefs.setStringList("tools", selectedTools);
-      await prefs.setStringList("languages", selectedLanguages);
-
       Navigator.pushReplacement(
         this.context,
         MaterialPageRoute(
@@ -255,31 +284,38 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
         ),
       );
     } else {
-      ScaffoldMessenger.of(this.context).showSnackBar(
-        SnackBar(content: Text("Error: $body")),
-      );
+      ScaffoldMessenger.of(this.context)
+          .showSnackBar(SnackBar(content: Text("Error: $body")));
     }
   }
 
-  // ███████ UI SAVE BUTTON ███████
+  // ------------------- VALIDATION -------------------
   void saveProfile() {
-    if (nameController.text.isEmpty ||
-        selectedCategory == null ||
-        experienceController.text.isEmpty ||
-        priceController.text.isEmpty) {
-      ScaffoldMessenger.of(this.context)
-          .showSnackBar(const SnackBar(content: Text("Fill all fields")));
-      return;
-    }
-
     updateProfileAPI();
   }
 
-  // █████████████ UI SCREEN █████████████
+  // ------------------- UI -------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Create Psychic Profile"), backgroundColor: Colors.deepPurple,),
+      appBar: AppBar(
+        backgroundColor: Colors.deepPurple,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const LoginScreen()),
+            );
+          },
+        ),
+        title: const Text(
+          "Create Psychic Profile",
+          style: TextStyle(color: Colors.white),
+        ),
+      ),
+
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -291,15 +327,18 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
               child: CircleAvatar(
                 radius: 55,
                 backgroundColor: Colors.deepPurple,
-                backgroundImage:
-                _image != null ? FileImage(_image!) : null,
-                child: _image == null
-                    ? const Icon(Icons.camera_alt, size: 35,)
+                backgroundImage: _image != null
+                    ? FileImage(_image!)
+                    : (userImageURL != null
+                    ? NetworkImage(userImageURL!)
+                    : null),
+                child: (_image == null && userImageURL == null)
+                    ? const Icon(Icons.camera_alt, size: 35)
                     : null,
               ),
             ),
-            const SizedBox(height: 20),
 
+            const SizedBox(height: 20),
             buildInput("Full Name", nameController),
             buildInput("Experience (Years)", experienceController,
                 keyboard: TextInputType.number),
@@ -314,7 +353,7 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
                   child: Text(c["name"].toString()),
                 );
               }).toList(),
-              value: selectedCategory,
+              value: null,
               onChanged: (v) =>
                   setState(() => selectedCategory = v.toString()),
             ),
@@ -323,16 +362,14 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
             buildChips("Specialities", apiSkills, selectedSkills,
                 loadingSkills),
             const SizedBox(height: 20),
-            buildChips(
-                "Abilities", apiAbility, selectedAbility, loadingAbility),
+            buildChips("Abilities", apiAbility, selectedAbility,
+                loadingAbility),
             const SizedBox(height: 20),
             buildChips("Tools", apiTools, selectedTools, loadingTools),
 
             const SizedBox(height: 20),
-
             buildInput("About Psychic", aboutController,
                 keyboard: TextInputType.multiline),
-
             const SizedBox(height: 20),
 
             ElevatedButton(
@@ -341,7 +378,7 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
                 minimumSize: const Size(double.infinity, 50),
                 backgroundColor: Colors.deepPurple,
               ),
-              child: const Text("Create Profile"),
+              child: const Text("Save Profile"),
             ),
           ],
         ),
@@ -349,15 +386,17 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
     );
   }
 
-  // ███████ HELPERS ███████
-  Widget buildInput(String title, TextEditingController c,
-      {TextInputType keyboard = TextInputType.text}) {
+  // ------------------- HELPERS -------------------
+  Widget buildInput(
+      String title,
+      TextEditingController c, {
+        TextInputType keyboard = TextInputType.text,
+      }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(title,
-            style:
-            const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
         const SizedBox(height: 6),
         TextField(
           controller: c,
@@ -376,8 +415,8 @@ class _PsychicProfileSetupScreenState extends State<PsychicProfileSetupScreen> {
     );
   }
 
-  Widget buildChips(String title, List<String> list, List<String> selected,
-      bool loading) {
+  Widget buildChips(String title, List<String> list,
+      List<String> selected, bool loading) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

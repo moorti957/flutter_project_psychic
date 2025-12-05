@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:psychics/repository/PsychicProfile/PsychicProfileSetupScreen.dart';
 import 'package:psychics/repository/screens/Bottomnav/MainNavigationScreen.dart';
 import 'package:psychics/repository/screens/Bottomnav/PsychicMainNavigation.dart';
+import 'package:psychics/repository/screens/Dashboard/PsychicDashboardScreen.dart';
 import 'package:psychics/repository/screens/login/ForgotPasswordScreen.dart';
 import 'package:psychics/repository/screens/login/SignUpScreen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -105,26 +106,55 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // 🔥 SAVE TOKEN HERE
+      // --------------------------------------------------
+      // 🔥 SAVE TOKEN + USER_ID + ROLE (IMPORTANT)
+      // --------------------------------------------------
+
       final prefs = await SharedPreferences.getInstance();
+
+      // save token
       await prefs.setString("token", data["token"]);
       debugPrint("TOKEN SAVED = ${data["token"]}");
 
-      // 🎉 Login Success → Check ROLE from API
+      // save user id (THIS ENABLES AUTO-FILL PROFILE)
+      await prefs.setString("user_id", data["user"]["id"].toString());
+      debugPrint("USER ID SAVED = ${data["user"]["id"]}");
+
+      // save role
       final String userRole =
       (data["user"]?["role"] ?? "").toString().toLowerCase();
 
       debugPrint("RAW ROLE = ${data["user"]?["role"]}");
       debugPrint("LOWER CASE ROLE = $userRole");
+
       await prefs.setString("role", userRole);
 
+      // --------------------------------------------------
+      // 🔥 REDIRECT BASED ON ROLE
+      // --------------------------------------------------
 
       if (userRole == "psychic") {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const PsychicProfileSetupScreen()),
-        );
+
+        bool hasProfile = await checkPsychicProfile();
+
+        if (hasProfile) {
+          // Psychic profile already created → Go to dashboard
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => PsychicMainNavigation(
+              profileScreen: const PsychicDashboardScreen(),
+            )),
+          );
+        } else {
+          // New psychic → Must complete setup
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const PsychicProfileSetupScreen()),
+          );
+        }
+
       } else {
+        // Normal user
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -132,11 +162,55 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         );
       }
+
     } catch (e) {
       setState(() => isLoading = false);
       showMessage("Something went wrong!");
     }
   }
+
+  Future<bool> checkPsychicProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString("token");
+    final userId = prefs.getString("user_id");
+
+    if (token == null || userId == null) return false;
+
+    final url = Uri.parse("https://psychicbelive.mapps.site/api/psychics");
+
+    final response = await http.get(
+      url,
+      headers: {
+        "Accept": "application/json",
+        "Authorization": "Bearer $token"
+      },
+    );
+
+    print("PROFILE CHECK STATUS: ${response.statusCode}");
+    print("PROFILE CHECK BODY: ${response.body}");
+
+    if (response.statusCode != 200) return false;
+
+    final data = jsonDecode(response.body);
+
+    if (data["data"] == null) return false;
+
+    final List psychics = data["data"];
+
+    // 🔥 CHECK IF PROFILE EXISTS FOR THIS USER ID
+    final match = psychics.firstWhere(
+          (p) => p["user_id"].toString() == userId,
+      orElse: () => null,
+    );
+
+    return match != null;
+  }
+
+
+
+
+
+
 
 
 

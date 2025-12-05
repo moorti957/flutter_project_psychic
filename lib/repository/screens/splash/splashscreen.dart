@@ -3,8 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:psychics/repository/PsychicProfile/PsychicProfileSetupScreen.dart';
 import 'package:psychics/repository/screens/Bottomnav/MainNavigationScreen.dart';
 import 'package:psychics/repository/screens/Bottomnav/PsychicMainNavigation.dart';
+import 'package:psychics/repository/screens/Dashboard/PsychicDashboardScreen.dart';
 import 'package:psychics/repository/screens/login/loginscreen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
 import '../../widgets/uihelper.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -22,40 +26,93 @@ class _SplashScreenState extends State<SplashScreen> {
     Timer(const Duration(milliseconds: 500), _checkLoginStatus);
   }
 
+  // ----------------------------------------------------------
+  // CHECK IF PSYCHIC PROFILE EXISTS
+  // ----------------------------------------------------------
+  Future<bool> checkPsychicProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final token = prefs.getString("token");
+    final userId = prefs.getString("user_id");
+
+    if (token == null || userId == null) return false;
+
+    final url = Uri.parse("https://psychicbelive.mapps.site/api/psychics");
+
+    final response = await http.get(url, headers: {"Accept": "application/json"});
+
+    if (response.statusCode != 200) return false;
+
+    final data = jsonDecode(response.body);
+
+    if (data["data"] == null) return false;
+
+    final List psychics = data["data"];
+
+    final match = psychics.firstWhere(
+          (p) => p["user_id"].toString() == userId,
+      orElse: () => null,
+    );
+
+    return match != null;
+  }
+
+  // ----------------------------------------------------------
+  // LOGIN CHECK + NAVIGATION
+  // ----------------------------------------------------------
   Future<void> _checkLoginStatus() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
 
     String? token = prefs.getString("token");
-    String? role = prefs.getString("role");  // ← ROLE CHECK
+    String? role = prefs.getString("role");
 
-    // 🔥 User logged in → Navigate based on ROLE
     if (token != null && token.isNotEmpty) {
       if (role == "psychic") {
+
+        bool hasProfile = await checkPsychicProfile();
+
+        if (hasProfile) {
+          // 👉 Psychic profile already created
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PsychicMainNavigation(
+                profileScreen: const PsychicDashboardScreen(),
+              ),
+            ),
+          );
+        } else {
+          // 👉 Psychic has no profile created yet
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const PsychicProfileSetupScreen(),
+            ),
+          );
+        }
+
+      } else {
+        // 👉 Normal User
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => PsychicMainNavigation(
-              profileScreen: const PsychicProfileSetupScreen(),  // ← ADD THIS
-            ),
+            builder: (_) => const MainNavigationScreen(initialIndex: 0),
           ),
-        );
-
-      } else {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const MainNavigationScreen(initialIndex: 0)),
         );
       }
       return;
     }
 
-    // ❌ No login → Go to Login Page
+    // ❌ Not logged in → Go to Login Page
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const LoginScreen()),
     );
   }
 
+  // ----------------------------------------------------------
+  // UI
+  // ----------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(

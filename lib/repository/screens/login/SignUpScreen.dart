@@ -122,8 +122,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
         if (selectedRole == "psychic") {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (_) => const PsychicDashboardScreen()),
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
           );
+
         } else {
           Navigator.pushReplacement(
             context,
@@ -165,7 +166,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         if (selectedRole == "Psychic") {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (_) => const PsychicDashboardScreen()),
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
           );
         } else {
           Navigator.pushReplacement(
